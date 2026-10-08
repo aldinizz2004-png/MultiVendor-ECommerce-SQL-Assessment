@@ -1,3 +1,5 @@
+-- Q01 - Customer Order Summary
+-- All order statuses count; customers without orders are excluded.
 
 SELECT
     c.CustomerID,
@@ -11,4 +13,5 @@ GROUP BY
     c.FirstName,
     c.LastName
 ORDER BY
-    NumberOfOrders DESC;
+    NumberOfOrders DESC,
+    c.CustomerID;

@@ -1,85 +1,32 @@
-SET STATISTICS IO ON;
-SET STATISTICS TIME ON;
+-- Q13 - Product Sales Ranking Per Vendor
+-- Completed units; competition ranking per vendor, including zero-sales products.
+-- Compare product totals, not individual sales rows.
 
 SELECT
-    x.VendorName,
-    x.ProductName,
-    x.UnitsSold,
-
-    1 +
-    (
-        SELECT COUNT(*)
-
-        FROM
-        (
-            SELECT
-                p2.VendorID,
-                p2.ProductID,
-
-                SUM(
-                    CASE
-                        WHEN o2.Status = 'Completed'
-                            THEN ISNULL(oi2.Quantity, 0)
-                        ELSE 0
-                    END
-                ) AS UnitsSold
-
-            FROM Products p2
-
-            LEFT JOIN OrderItems oi2
-                ON p2.ProductID = oi2.ProductID
-
-            LEFT JOIN Orders o2
-                ON oi2.OrderID = o2.OrderID
-
-            GROUP BY
-                p2.VendorID,
-                p2.ProductID
-        ) y
-
-        WHERE y.VendorID = x.VendorID
-          AND y.UnitsSold > x.UnitsSold
-
-    ) AS ProductRank
-
-FROM
+    v.VendorName,
+    p.ProductName,
+    COALESCE(sales.UnitsSold, 0) AS UnitsSold,
+    1 + COUNT(higher.ProductID) AS ProductRank
+FROM Products p
+INNER JOIN Vendors v ON v.VendorID = p.VendorID
+LEFT JOIN
 (
-    SELECT
-        v.VendorID,
-        v.VendorName,
-        p.ProductID,
-        p.ProductName,
-
-        SUM(
-            CASE
-                WHEN o.Status = 'Completed'
-                    THEN ISNULL(oi.Quantity, 0)
-                ELSE 0
-            END
-        ) AS UnitsSold
-
-    FROM Vendors v
-
-    INNER JOIN Products p
-        ON v.VendorID = p.VendorID
-
-    LEFT JOIN OrderItems oi
-        ON p.ProductID = oi.ProductID
-
-    LEFT JOIN Orders o
-        ON oi.OrderID = o.OrderID
-
-    GROUP BY
-        v.VendorID,
-        v.VendorName,
-        p.ProductID,
-        p.ProductName
-) x
-
-ORDER BY
-    x.VendorName,
-    ProductRank,
-    x.ProductName;
-
-SET STATISTICS IO OFF;
-SET STATISTICS TIME OFF;
+    SELECT oi.ProductID, SUM(CAST(oi.Quantity AS BIGINT)) AS UnitsSold
+    FROM OrderItems oi
+    INNER JOIN Orders o ON o.OrderID = oi.OrderID
+    WHERE o.Status = 'Completed'
+    GROUP BY oi.ProductID
+) sales ON sales.ProductID = p.ProductID
+LEFT JOIN
+(
+    SELECT p2.VendorID, p2.ProductID,
+           SUM(CAST(oi.Quantity AS BIGINT)) AS UnitsSold
+    FROM Products p2
+    INNER JOIN OrderItems oi ON oi.ProductID = p2.ProductID
+    INNER JOIN Orders o ON o.OrderID = oi.OrderID
+    WHERE o.Status = 'Completed'
+    GROUP BY p2.VendorID, p2.ProductID
+) higher ON higher.VendorID = p.VendorID
+        AND higher.UnitsSold > COALESCE(sales.UnitsSold, 0)
+GROUP BY v.VendorID, v.VendorName, p.ProductID, p.ProductName, sales.UnitsSold
+ORDER BY v.VendorName, v.VendorID, ProductRank, p.ProductName, p.ProductID;

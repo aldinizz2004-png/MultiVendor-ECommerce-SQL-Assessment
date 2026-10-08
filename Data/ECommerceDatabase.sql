@@ -3,6 +3,16 @@
 -- SQL Server
 -- =========================================================
 
+-- Run this file first, then Indexes.sql, then SeedData.sql.
+-- This creates a separate assessment database; it never drops an existing one.
+IF DB_ID(N'MultiVendorECommerceAssessment') IS NULL
+    EXEC(N'CREATE DATABASE MultiVendorECommerceAssessment');
+GO
+USE MultiVendorECommerceAssessment;
+GO
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
 
 -- =========================================================
 -- Customers
@@ -442,6 +452,85 @@ CREATE TABLE PriceHistory (
 );
 GO
 
+
+-- Half-open intervals [EffectiveFrom, EffectiveTo) may touch but not overlap.
+-- Lock the matching index ranges so concurrent history writers cannot both pass.
+CREATE TRIGGER dbo.TR_PriceHistory_NoOverlap
+ON dbo.PriceHistory
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF EXISTS
+    (
+        SELECT 1
+        FROM inserted i
+        INNER JOIN dbo.PriceHistory h WITH (UPDLOCK, HOLDLOCK)
+            ON h.ProductID = i.ProductID
+           AND h.PriceHistoryID <> i.PriceHistoryID
+           AND (i.EffectiveTo IS NULL OR h.EffectiveFrom < i.EffectiveTo)
+           AND (h.EffectiveTo IS NULL OR i.EffectiveFrom < h.EffectiveTo)
+    )
+        THROW 51001, 'Price history intervals must not overlap for a product.', 1;
+END;
+GO
+
+-- Supported backend price-write path: lock product, close history, insert
+-- replacement, and change cached current price in one transaction.
+CREATE PROCEDURE dbo.SetProductPrice
+    @ProductID INT,
+    @NewPrice DECIMAL(10,2),
+    @EffectiveFrom DATETIME2 = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    DECLARE @Now DATETIME2 = SYSUTCDATETIME();
+    SET @EffectiveFrom = COALESCE(@EffectiveFrom, @Now);
+    IF @NewPrice IS NULL OR @NewPrice < 0
+        THROW 51002, 'Price must be non-negative.', 1;
+    IF @EffectiveFrom > @Now
+        THROW 51003, 'Future scheduled price changes are not supported.', 1;
+
+    DECLARE @OwnTransaction BIT = CASE WHEN @@TRANCOUNT = 0 THEN 1 ELSE 0 END;
+    BEGIN TRY
+        IF @OwnTransaction = 1 BEGIN TRANSACTION;
+        ELSE SAVE TRANSACTION PriceChange;
+
+        DECLARE @CurrentPrice DECIMAL(10,2), @CurrentFrom DATETIME2;
+        SELECT @CurrentPrice = Price
+        FROM dbo.Products WITH (UPDLOCK, HOLDLOCK)
+        WHERE ProductID = @ProductID;
+        IF @CurrentPrice IS NULL
+            THROW 51004, 'Product does not exist.', 1;
+
+        SELECT @CurrentFrom = EffectiveFrom
+        FROM dbo.PriceHistory WITH (UPDLOCK, HOLDLOCK)
+        WHERE ProductID = @ProductID AND EffectiveTo IS NULL;
+        IF @CurrentFrom IS NULL
+            THROW 51005, 'Initialize price history before changing a price.', 1;
+        IF @EffectiveFrom <= @CurrentFrom
+            THROW 51006, 'Price changes must follow the current history start.', 1;
+
+        IF @NewPrice <> @CurrentPrice
+        BEGIN
+            UPDATE dbo.PriceHistory
+            SET EffectiveTo = @EffectiveFrom
+            WHERE ProductID = @ProductID AND EffectiveTo IS NULL;
+            INSERT INTO dbo.PriceHistory(ProductID, Price, EffectiveFrom, EffectiveTo)
+            VALUES (@ProductID, @NewPrice, @EffectiveFrom, NULL);
+            UPDATE dbo.Products SET Price = @NewPrice WHERE ProductID = @ProductID;
+        END;
+        IF @OwnTransaction = 1 COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF @OwnTransaction = 1 AND XACT_STATE() <> 0 ROLLBACK TRANSACTION;
+        ELSE IF @OwnTransaction = 0 AND XACT_STATE() = 1
+            ROLLBACK TRANSACTION PriceChange;
+        THROW;
+    END CATCH;
+END;
+GO
 
 PRINT 'Database schema created successfully.';
 GO

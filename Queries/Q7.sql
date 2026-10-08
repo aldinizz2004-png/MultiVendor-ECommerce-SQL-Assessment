@@ -1,3 +1,6 @@
+-- Q07 - Second Most Expensive Product Per Category
+-- Second DISTINCT price level, including all ties. Fewer than two price levels yields no row.
+
 SELECT
     c.CategoryName,
     p.ProductName,

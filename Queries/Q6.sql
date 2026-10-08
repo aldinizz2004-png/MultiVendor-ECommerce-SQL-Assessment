@@ -1,6 +1,5 @@
-SET STATISTICS IO ON;
-SET STATISTICS TIME ON;
-
+-- Q06 - Top-Selling Product Per Vendor
+-- Units sold use completed orders. All tied products, including zero-sales ties, are returned.
 
 SELECT
     v.VendorName,
@@ -8,7 +7,7 @@ SELECT
     SUM(
         CASE
             WHEN o.Status = 'Completed'
-                THEN ISNULL(oi.Quantity, 0)
+                THEN ISNULL(CAST(oi.Quantity AS BIGINT), 0)
             ELSE 0
         END
     ) AS UnitsSold
@@ -31,7 +30,7 @@ HAVING NOT EXISTS
     WHERE p2.VendorID = p.VendorID
       AND
       (
-          SELECT ISNULL(SUM(oi2.Quantity), 0)
+          SELECT ISNULL(SUM(CAST(oi2.Quantity AS BIGINT)), 0)
           FROM OrderItems oi2
           INNER JOIN Orders o2
               ON oi2.OrderID = o2.OrderID
@@ -42,15 +41,13 @@ HAVING NOT EXISTS
       SUM(
           CASE
               WHEN o.Status = 'Completed'
-                  THEN ISNULL(oi.Quantity, 0)
+                  THEN ISNULL(CAST(oi.Quantity AS BIGINT), 0)
               ELSE 0
           END
       )
 )
 ORDER BY
     v.VendorName,
-    p.ProductName;
-
-
-SET STATISTICS IO OFF;
-SET STATISTICS TIME OFF;
+    p.VendorID,
+    p.ProductName,
+    p.ProductID;

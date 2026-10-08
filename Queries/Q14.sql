@@ -1,3 +1,6 @@
+-- Q14 - Customer Monthly Spending
+-- Completed order lines grouped by both year and month.
+
 SELECT
     c.CustomerID,
 

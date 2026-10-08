@@ -1,3 +1,12 @@
+-- Required connection options for filtered indexes.
+SET ANSI_NULLS ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET ARITHABORT ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET QUOTED_IDENTIFIER ON;
+SET NUMERIC_ROUNDABORT OFF;
+
 -- =========================================================
 -- SeedData.sql
 -- Multi-Vendor E-Commerce Database
@@ -6,6 +15,11 @@
 
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
+
+-- Capture one clock value so adjacent price ranges share an exact boundary.
+DECLARE @SeedNow DATETIME2 = SYSUTCDATETIME();
+DECLARE @PriceChangeAt DATETIME2 = DATEADD(DAY, -180, @SeedNow);
+DECLARE @LastCompletedDate DATETIME2 = DATEADD(DAY, -5, @SeedNow);
 
 BEGIN TRY
     BEGIN TRANSACTION;
@@ -21,16 +35,23 @@ BEGIN TRY
        OR EXISTS (SELECT 1 FROM Products)
        OR EXISTS (SELECT 1 FROM Orders)
     BEGIN
-        RAISERROR(
-            'Seed data already exists. Run this script only on an empty schema.',
-            16,
-            1
-        );
-
-        ROLLBACK TRANSACTION;
-        RETURN;
+        THROW 51010, 'Seed data already exists. Use a fresh assessment schema.', 1;
     END;
 
+
+    -- Hard-coded fixture IDs require identities that have never been consumed.
+    -- DELETE and rolled-back inserts do not reset identity values.
+    IF EXISTS
+    (
+        SELECT 1 FROM sys.identity_columns
+        WHERE object_id IN
+        (OBJECT_ID('Customers'), OBJECT_ID('CustomerAddresses'), OBJECT_ID('Vendors'),
+         OBJECT_ID('Categories'), OBJECT_ID('Products'), OBJECT_ID('Orders'),
+         OBJECT_ID('OrderItems'), OBJECT_ID('Payments'), OBJECT_ID('Shipments'),
+         OBJECT_ID('Reviews'), OBJECT_ID('PriceHistory'))
+          AND last_value IS NOT NULL
+    )
+        THROW 51011, 'Seed requires fresh identity counters; use a newly created schema.', 1;
 
     -- =========================================================
     -- 1. Vendors
@@ -683,7 +704,7 @@ BEGIN TRY
 
     (5, 'Outlet Home Set',
      'Clearance home item',
-     25.99, 20, 1),
+     29.99, 20, 1),
 
     (5, 'Outlet Bag',
      'Clearance bag',
@@ -711,7 +732,7 @@ BEGIN TRY
 
     (5, 'Winter Gift Box',
      'Seasonal unsold product',
-     39.99, 20, 0);
+     39.99, 0, 0);
 
 
     -- =========================================================
@@ -818,8 +839,8 @@ BEGIN TRY
                     -@MonthOffset,
                     DATEFROMPARTS
                     (
-                        YEAR(SYSUTCDATETIME()),
-                        MONTH(SYSUTCDATETIME()),
+                        YEAR(@SeedNow),
+                        MONTH(@SeedNow),
                         1
                     )
                 );
@@ -832,6 +853,8 @@ BEGIN TRY
                     CAST(@MonthStart AS DATETIME2)
                 );
 
+            -- Completed orders and their +4-day deliveries cannot be in the future.
+            IF @OrderDate > @LastCompletedDate SET @OrderDate = @LastCompletedDate;
             SET @Status = 'Completed';
         END
 
@@ -849,7 +872,7 @@ BEGIN TRY
                 (
                     DAY,
                     -(@i - 90),
-                    SYSUTCDATETIME()
+                    @SeedNow
                 );
 
             SET @Status = 'Cancelled';
@@ -869,7 +892,7 @@ BEGIN TRY
                 (
                     DAY,
                     -(@i - 100),
-                    SYSUTCDATETIME()
+                    @SeedNow
                 );
 
             SET @Status = 'Pending';
@@ -889,7 +912,7 @@ BEGIN TRY
                 (
                     DAY,
                     -(@i - 104),
-                    SYSUTCDATETIME()
+                    @SeedNow
                 );
 
             SET @Status = 'Shipped';
@@ -914,8 +937,8 @@ BEGIN TRY
                     -@MonthOffset,
                     DATEFROMPARTS
                     (
-                        YEAR(SYSUTCDATETIME()),
-                        MONTH(SYSUTCDATETIME()),
+                        YEAR(@SeedNow),
+                        MONTH(@SeedNow),
                         1
                     )
                 );
@@ -928,6 +951,8 @@ BEGIN TRY
                     CAST(@MonthStart AS DATETIME2)
                 );
 
+            -- Completed orders and their +4-day deliveries cannot be in the future.
+            IF @OrderDate > @LastCompletedDate SET @OrderDate = @LastCompletedDate;
             SET @Status = 'Completed';
         END;
 
@@ -1253,7 +1278,7 @@ BEGIN TRY
     -- =========================================================
     -- 12. Reviews
     -- Required: 50+
-    -- Generated: 60
+    -- Generated: 61 (including the additional aggregation fixture)
     --
     -- Products 1-30 receive reviews.
     -- Products 31-50 remain unreviewed.
@@ -1307,7 +1332,7 @@ BEGIN TRY
             (
                 DAY,
                 -@i,
-                SYSUTCDATETIME()
+                @SeedNow
             )
         );
 
@@ -1319,7 +1344,7 @@ BEGIN TRY
     -- =========================================================
     -- 13. PriceHistory
     -- Required: 75+
-    -- Generated: 100
+    -- Generated: 101 (including the additional price-cycle fixture)
     --
     -- Two historical records per product.
     -- Every fifth product keeps the same price.
@@ -1356,15 +1381,10 @@ BEGIN TRY
         (
             DAY,
             -365,
-            SYSUTCDATETIME()
+            @SeedNow
         ),
 
-        DATEADD
-        (
-            DAY,
-            -180,
-            SYSUTCDATETIME()
-        )
+        @PriceChangeAt
 
     FROM Products;
 
@@ -1380,17 +1400,46 @@ BEGIN TRY
         ProductID,
         Price,
 
-        DATEADD
-        (
-            DAY,
-            -180,
-            SYSUTCDATETIME()
-        ),
+        @PriceChangeAt,
 
         NULL
 
     FROM Products;
 
+
+    -- Additional fixtures that expose errors hidden by uniform test data.
+    -- A historical increase followed by a return to the original price.
+    UPDATE PriceHistory
+    SET EffectiveTo = DATEADD(DAY, -270, @SeedNow)
+    WHERE ProductID = 5 AND EffectiveTo = @PriceChangeAt;
+    INSERT INTO PriceHistory(ProductID, Price, EffectiveFrom, EffectiveTo)
+    SELECT ProductID, CAST(Price * 1.10 AS DECIMAL(10,2)),
+           DATEADD(DAY, -270, @SeedNow), @PriceChangeAt
+    FROM Products WHERE ProductID = 5;
+
+    -- Unequal review counts distinguish product-weighted from review-weighted ratings.
+    INSERT INTO Reviews(ProductID, CustomerID, Rating, Comment, ReviewDate)
+    VALUES (1, 19, 5, 'Extra review to test aggregation weights', @SeedNow);
+
+    -- Units sold must count quantity, not the number of order lines.
+    UPDATE OrderItems SET Quantity = 3 WHERE OrderID = 1 AND ProductID = 14;
+
+    -- Snapshot the price effective at purchase time, not today's catalog price.
+    UPDATE oi SET UnitPrice = ph.Price
+    FROM OrderItems oi
+    INNER JOIN Orders o ON o.OrderID = oi.OrderID
+    INNER JOIN PriceHistory ph ON ph.ProductID = oi.ProductID
+        AND ph.EffectiveFrom <= o.OrderDate
+        AND (ph.EffectiveTo IS NULL OR o.OrderDate < ph.EffectiveTo);
+
+    -- Keep payment attempts consistent with the seeded order amounts.
+    UPDATE payment SET Amount = totals.Total
+    FROM Payments payment
+    INNER JOIN
+    (
+        SELECT OrderID, SUM(Quantity * UnitPrice) AS Total
+        FROM OrderItems GROUP BY OrderID
+    ) totals ON totals.OrderID = payment.OrderID;
 
     -- =========================================================
     -- Commit
@@ -1410,16 +1459,7 @@ BEGIN CATCH
         ROLLBACK TRANSACTION;
     END;
 
-    DECLARE @ErrorMessage NVARCHAR(4000);
-
-    SET @ErrorMessage = ERROR_MESSAGE();
-
-    RAISERROR
-    (
-        @ErrorMessage,
-        16,
-        1
-    );
+    THROW;
 
 END CATCH;
 

@@ -1,5 +1,5 @@
-SET STATISTICS IO ON;
-SET STATISTICS TIME ON;
+-- Q09 - Month-over-Month Revenue Growth
+-- Compare the immediately preceding CALENDAR month. Missing/zero prior revenue gives NULL growth.
 
 SELECT
     YEAR(currentMonth.MonthStart) AS [Year],
@@ -74,7 +74,3 @@ LEFT JOIN
 
 ORDER BY
     currentMonth.MonthStart;
-
-
-SET STATISTICS IO OFF;
-SET STATISTICS TIME OFF;    

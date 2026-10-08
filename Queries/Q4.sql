@@ -1,3 +1,5 @@
+-- Q04 - Top 10 Spending Customers
+-- Exactly ten customers at most; CustomerID breaks spending ties deterministically.
 
 SELECT TOP 10
     c.CustomerID,

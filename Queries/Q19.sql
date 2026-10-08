@@ -1,3 +1,6 @@
+-- Q19 - Category Performance Analysis
+-- AvgRating is the equal-weight mean of rated PRODUCT averages; exclude unreviewed products.
+
 SELECT
     c.CategoryName,
 
@@ -32,7 +35,7 @@ LEFT JOIN
     SELECT
         pc.CategoryID,
 
-        SUM(oi.Quantity)
+        SUM(CAST(oi.Quantity AS BIGINT))
             AS UnitsSold,
 
         SUM(
@@ -58,15 +61,17 @@ LEFT JOIN
     SELECT
         pc.CategoryID,
 
-        AVG(
-            CAST(
-                r.Rating AS DECIMAL(10,2)
-            )
-        ) AS AvgRating
+        AVG(r.ProductAvgRating) AS AvgRating
 
     FROM ProductCategories pc
 
-    INNER JOIN Reviews r
+    INNER JOIN
+    (
+        SELECT ProductID,
+               AVG(CAST(Rating AS DECIMAL(10,2))) AS ProductAvgRating
+        FROM Reviews
+        GROUP BY ProductID
+    ) r
         ON pc.ProductID = r.ProductID
 
     GROUP BY pc.CategoryID

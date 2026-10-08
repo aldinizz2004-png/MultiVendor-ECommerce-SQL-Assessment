@@ -1,3 +1,6 @@
+-- Q05 - Inactive Customers
+-- All statuses count. Exactly 90 days ago is inside the activity window.
+
 SELECT
     c.CustomerID,
     CONCAT(c.FirstName, ' ', c.LastName) AS CustomerName,
@@ -12,4 +15,5 @@ GROUP BY
 HAVING
     MAX(o.OrderDate) < DATEADD(DAY, -90, SYSUTCDATETIME())
 ORDER BY
-    LastOrderDate;
+    LastOrderDate,
+    c.CustomerID;

@@ -1,3 +1,5 @@
+-- Q03 - Vendor Revenue Breakdown
+-- Completed order lines only; include vendors with zero completed sales.
 
 SELECT
     v.VendorID,
@@ -11,7 +13,7 @@ LEFT JOIN
     SELECT
         p.VendorID,
         COUNT(DISTINCT o.OrderID) AS TotalOrders,
-        SUM(oi.Quantity) AS TotalItemsSold,
+        SUM(CAST(oi.Quantity AS BIGINT)) AS TotalItemsSold,
         SUM(oi.Quantity * oi.UnitPrice) AS TotalRevenue
     FROM Products p
     INNER JOIN OrderItems oi
@@ -24,4 +26,5 @@ LEFT JOIN
 ) s
     ON v.VendorID = s.VendorID
 ORDER BY
-    TotalRevenue DESC;
+    TotalRevenue DESC,
+    v.VendorID;

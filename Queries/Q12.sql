@@ -1,5 +1,5 @@
-SET STATISTICS IO ON;
-SET STATISTICS TIME ON;
+-- Q12 - Category Revenue Analysis
+-- Full sales credit to every product category; category totals are not additive across categories.
 
 SELECT
     c.CategoryID,
@@ -9,7 +9,7 @@ SELECT
         SUM(
             CASE
                 WHEN o.OrderID IS NOT NULL
-                    THEN oi.Quantity
+                    THEN CAST(oi.Quantity AS BIGINT)
                 ELSE 0
             END
         ),
@@ -48,6 +48,3 @@ GROUP BY
 
 ORDER BY
     c.CategoryID;
-
-SET STATISTICS IO OFF;
-SET STATISTICS TIME OFF;

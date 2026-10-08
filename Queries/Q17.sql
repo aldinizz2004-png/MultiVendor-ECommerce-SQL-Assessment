@@ -1,3 +1,6 @@
+-- Q17 - Customer Retention
+-- Any order status; distinct YEAR + MONTH, not month number alone.
+
 SELECT
     c.CustomerID,
 

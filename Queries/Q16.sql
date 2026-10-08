@@ -1,3 +1,6 @@
+-- Q16 - Inventory Risk Analysis
+-- Strictly below threshold; include inactive products because the task does not exclude them.
+
 DECLARE @StockThreshold INT = 10;
 
 SELECT

@@ -1,3 +1,5 @@
+-- Q02 - Unordered Products
+-- Never ordered means no OrderItems row in ANY order status.
 
 SELECT
     p.ProductID,
@@ -13,5 +15,4 @@ WHERE NOT EXISTS
     WHERE oi.ProductID = p.ProductID
 )
 ORDER BY
-    p.ProductID;    
-
+    p.ProductID;

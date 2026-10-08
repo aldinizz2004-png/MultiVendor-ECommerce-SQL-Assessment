@@ -1,3 +1,6 @@
+-- Q18 - Consecutive Monthly Purchases
+-- Completed orders only. December -> January is consecutive; return each qualifying month pair.
+
 SELECT DISTINCT
     c.CustomerID,
 
